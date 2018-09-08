@@ -57,7 +57,7 @@ def get_time_from_string(time_string):
 
 def scs_food():
 	"""Search for events in SCS - https://www.cs.cmu.edu/calendar"""
-	base_url = "https://cs.cmu.edu"
+	base_url = "http://cs.cmu.edu"
 	url = base_url + "/calendar/"
 	affiliation = "School of Computer Science"
 	response = requests.get(url)
@@ -76,7 +76,7 @@ def scs_food():
 
 def mellon_science_food():
 	"""Search for events in Mellon School of Science - https://events.time.ly/0qe3bmk"""
-	url = "https://events.time.ly/0qe3bmk"
+	url = "http://events.time.ly/0qe3bmk"
 	affiliation = "Mellon School of Science"
 	response = requests.get(url)
 	soup = BeautifulSoup(response.text, "html.parser")
