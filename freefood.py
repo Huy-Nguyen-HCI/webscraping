@@ -8,17 +8,11 @@ from httplib2 import Http
 from oauth2client import file, client, tools
 
 SCHOOL_URLS = [
-	"https://www.cmu.edu/events/",								# campus wide
-	"https://events.time.ly/0qe3bmk",							# Mellon School of Science
-	"https://www.cs.cmu.edu/calendar",							# School of Computer Science
 	"https://www.cs.cmu.edu/scs-seminar-series",				# All seminars in GHC have food!
-	"https://www.cmu.edu/dietrich/about/calendar/",				# Dietrich College of H & SS
-	"https://soa.cmu.edu/calendar/",							# School of Architecture
 	"https://www.cmu.edu/piper/calendar/",						# The Piper
 	"https://www.heinz.cmu.edu/about/events",					# Heinz College
 	"http://www.cfa.cmu.edu/pages/calendar",					# College of Fine Arts
 	"http://www.cs.cmu.edu/~aiseminar/",						# AI seminar
-	"https://engineering.cmu.edu/news-events/events/index.html"	# College of Engineering
 ]
 
 """if modifying these scopes, delete the file token.json."""
@@ -104,8 +98,10 @@ def scrape_google_calendar(affiliation, google_calendar_id):
 				location = event["location"]
 				event_link = event["htmlLink"]
 				chosen_events.append([title, event_time, location, event_link, affiliation])
-		# if no hour specified, ignore event
+		# if missing any required information, skip event
 		except ValueError:
+			pass
+		except KeyError:
 			pass
 
 
@@ -180,6 +176,13 @@ def dietrich_food():
 	scrape_google_calendar("Dietrich", "t6ebuir6klabea3q87b5qjs360@group.calendar.google.com")
 
 
+def architecture_food():
+	"""Search for events in School of Architecture"""
+	scrape_google_calendar("School of Architecture", "soa-public@andrew.cmu.edu")
+	scrape_google_calendar("School of Architecture", "soa-students@andrew.cmu.edu")
+	scrape_google_calendar("School of Architecture", "soa-faculty@andrew.cmu.edu")
+
+
 def campus_food():
 	"""Search for events in general campus"""
 	scrape_google_calendar("University-wide", "andrew.cmu.edu_333234353933332d373938@resource.calendar.google.com")
@@ -191,19 +194,22 @@ def print_events():
 		event[1] = datetime.strftime(event[1], TIME_FORMAT)
 
 	headers = ["Name", "Time", "Location", "Url", "Affiliation"]
-	print("Found food at these events ^.^")
-	print(tabulate(output, headers=headers))
 
-	with open("output.csv", "w") as f:
+	with open("omg_food.csv", "w") as f:
 		writer = csv.writer(f, delimiter=",")
 		writer.writerow(headers)
 		writer.writerows(output)
 
+	print("Found food at these events ^.^")
+	print(tabulate(output, headers=headers))
+
 
 if __name__ == '__main__':
-	# scs_food()
-	# mellon_science_food()
-	# dietrich_food()
-	# engineering_food()
+	scs_food()
+	mellon_science_food()
+	dietrich_food()
+	engineering_food()
 	campus_food()
+	architecture_food()
+
 	print_events()
