@@ -1,4 +1,4 @@
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag, NavigableString
 import os, csv
 import requests
 from datetime import datetime, timedelta
@@ -27,11 +27,17 @@ KEYWORDS = ["food", "lunch", "free", "seminars", "thesis", "proposal"]
 """A table of all chosen events, sorted by time, with the following columns: name, time, location, url"""
 chosen_events = []
 
+# Event time range filter
+START = datetime.utcnow()
+END = datetime.utcnow() + timedelta(days=7)
+
 def check_for_food(label, event_time):
 	"""Check if event (potentially) has free food, based on label and event time.
 
-	Label must contain one of the keywords or time should be between 11am and 12pm.
+	Label must contain one of the keywords or time should be between 11am and 12pm, after today.
 	"""
+	if event_time < START or event_time > END:
+		return False
 	if len([word for word in KEYWORDS if word in label.lower()]) > 0:
 		return True
 	if (event_time.hour >= 11 and event_time.hour <= 12):
@@ -74,10 +80,8 @@ def fetch_calendar(calendar_id):
 	service = build('calendar', 'v3', http=creds.authorize(Http()))
 
 	# Call the Calendar API
-	start = datetime.utcnow().isoformat() + 'Z' # 'Z' indicates UTC time
-	end = (datetime.utcnow() + timedelta(days=7)).isoformat() + 'Z'
-	events_result = service.events().list(calendarId=calendar_id, timeMin=start,
-	                                    singleEvents=True, timeMax=end,
+	events_result = service.events().list(calendarId=calendar_id, timeMin=START.isoformat() + 'Z',
+	                                    singleEvents=True, timeMax=END.isoformat() + 'Z',
 	                                    orderBy='startTime').execute()
 	return events_result.get('items', [])
 
@@ -116,7 +120,7 @@ def scs_food():
 		label = event.find("div", class_="event__label").get_text()
 		time_tag = event.find("time")
 		time_string = " ".join([t.get_text() for t in time_tag.children])
-		event_time = get_time_from_string(time_string)
+		event_time = get_time_from_string(time_string).replace(year=START.year)
 		if check_for_food(label, event_time):
 			title = event.find("h3", class_="event__title").get_text()
 			location = " ".join([l.get_text() for l in event.find_all("div", class_="field-item")])
@@ -138,8 +142,9 @@ def mellon_science_food():
 			event.find("div", class_="timely-day").get_text(),
 			filter_time_string(container.find("div", class_="timely-start-time").get_text())
 		)
-		event_time = get_time_from_string(time_string)
+		event_time = get_time_from_string(time_string).replace(year=START.year)
 		if check_for_food(title, event_time):
+			print(title)
 			location = container.find("span", class_="timely-venue").get_text()
 			event_link = event.get("href")
 			chosen_events.append([title, event_time, location, event_link, affiliation])
@@ -161,7 +166,7 @@ def engineering_food():
 			# if include both start and end time, only get start time
 			if "-" in hour:
 				hour = hour[:hour.find("-") - 1]
-			event_time = get_time_from_string("{} {}".format(date, hour), time_format)
+			event_time = get_time_from_string("{} {}".format(date, hour), time_format).replace(year=START.year)
 			if check_for_food(title, event_time):
 				location = event.find("div", class_="descrip").find("p").get_text()
 				event_link = url + event.find("div", class_="title").find("a").get("href")
@@ -169,6 +174,31 @@ def engineering_food():
 		# if no hour specified, ignore event
 		except IndexError:
 			pass
+
+
+def ai_seminar_food():
+	"""Search for events in SCS AI seminar"""
+	affiliation = "School of Computer Science"
+	url = "http://www.cs.cmu.edu/~aiseminar/"
+	time_format = "%b %d %Y %I:%M%p"
+	response = requests.get(url)
+	soup = BeautifulSoup(response.text, "html.parser")
+	for event in soup.find("table").find_all("tr")[1:]:
+		contents = [content for content in event.contents if isinstance(content, Tag)]
+		# event link may be either text or <a> tag
+		try:
+			link = contents[3].find("a")
+			title = link.get_text()
+			event_link = url + link.get("href")
+		except AttributeError:
+			title = contents[3].get_text()
+			event_link = ""
+		date_and_location = [tag for tag in contents[0] if isinstance(tag, NavigableString)]
+		date = date_and_location[0].replace(",", "") + " " + date_and_location[1].replace(" ", "")
+		event_time = get_time_from_string(date, time_format).replace(year=START.year)
+		if check_for_food(title, event_time):
+			location = date_and_location[2]
+			chosen_events.append([title, event_time, location, event_link, affiliation])
 
 
 def dietrich_food():
@@ -211,5 +241,5 @@ if __name__ == '__main__':
 	engineering_food()
 	campus_food()
 	architecture_food()
-
+	ai_seminar_food()
 	print_events()
