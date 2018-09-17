@@ -63,20 +63,50 @@ def get_time_from_string(time_string, time_format=TIME_FORMAT):
 
 
 def fetch_calendar(calendar_id):
-    store = file.Storage('token.json')
-    creds = store.get()
-    if not creds or creds.invalid:
-        flow = client.flow_from_clientsecrets('credentials.json', SCOPES)
-        creds = tools.run_flow(flow, store)
-    service = build('calendar', 'v3', http=creds.authorize(Http()))
+	"""Use Google Calendar Python API to get a list of events between now and 7 days later.
+	For documentation refer to https://developers.google.com/calendar/v3/reference/events/list
+	
+	Args:
+		calendar_id (str): the specified google calendar's id, used for extracting information
+	
+	Returns:
+		events ([Event]): a list of Events in google calendar
+	"""
+	store = file.Storage('token.json')
+	creds = store.get()
+	if not creds or creds.invalid:
+	    flow = client.flow_from_clientsecrets('credentials.json', SCOPES)
+	    creds = tools.run_flow(flow, store)
+	service = build('calendar', 'v3', http=creds.authorize(Http()))
 
-    # Call the Calendar API
-    start = datetime.utcnow().isoformat() + 'Z' # 'Z' indicates UTC time
-    end = (datetime.utcnow() + timedelta(days=7)).isoformat() + 'Z'
-    events_result = service.events().list(calendarId=calendar_id, timeMin=start,
-                                        singleEvents=True, timeMax=end,
-                                        orderBy='startTime').execute()
-    return events_result.get('items', [])
+	# Call the Calendar API
+	start = datetime.utcnow().isoformat() + 'Z' # 'Z' indicates UTC time
+	end = (datetime.utcnow() + timedelta(days=7)).isoformat() + 'Z'
+	events_result = service.events().list(calendarId=calendar_id, timeMin=start,
+	                                    singleEvents=True, timeMax=end,
+	                                    orderBy='startTime').execute()
+	return events_result.get('items', [])
+
+
+def scrape_google_calendar(affiliation, google_calendar_id):
+	"""Filter the Events retrieved from the specified google calendar according to the criteria in check_for_food.
+
+	Args:
+		affiliation (str): the name of the event organizer, which will be included in the output along with the event
+		google_calendar_id (str): the specified google calendar's id, used for extracting information
+	"""
+	for event in fetch_calendar(google_calendar_id):
+		try:
+			event_time = event["start"].get("dateTime", event['start'].get("date")).replace("-04:00", "")
+			event_time = datetime.strptime(event_time, '%Y-%m-%dT%H:%M:%S')
+			title = event["summary"]
+			if check_for_food(title, event_time):
+				location = event["location"]
+				event_link = event["htmlLink"]
+				chosen_events.append([title, event_time, location, event_link, affiliation])
+		# if no hour specified, ignore event
+		except ValueError:
+			pass
 
 
 def scs_food():
@@ -147,17 +177,12 @@ def engineering_food():
 
 def dietrich_food():
 	"""Search for events in Dietrich College of Humanities and Social Sciences"""
-	affiliation = "Dietrich"
-	google_calendar_id = "t6ebuir6klabea3q87b5qjs360@group.calendar.google.com"
-	for event in fetch_calendar(google_calendar_id):
-		# print(event["start"].get("dateTime", event['start'].get("date")), event['summary'])
-		event_time = event["start"].get("dateTime", event['start'].get("date")).replace("-04:00", "")
-		event_time = datetime.strptime(event_time, '%Y-%m-%dT%H:%M:%S')
-		title = event["summary"]
-		if check_for_food(title, event_time):
-			location = event["location"]
-			event_link = event["htmlLink"]
-			chosen_events.append([title, event_time, location, event_link, affiliation])
+	scrape_google_calendar("Dietrich", "t6ebuir6klabea3q87b5qjs360@group.calendar.google.com")
+
+
+def campus_food():
+	"""Search for events in general campus"""
+	scrape_google_calendar("University-wide", "andrew.cmu.edu_333234353933332d373938@resource.calendar.google.com")
 
 
 def print_events():
@@ -169,7 +194,7 @@ def print_events():
 	print("Found food at these events ^.^")
 	print(tabulate(output, headers=headers))
 
-	with open("free_food.csv", "w") as f:
+	with open("output.csv", "w") as f:
 		writer = csv.writer(f, delimiter=",")
 		writer.writerow(headers)
 		writer.writerows(output)
@@ -179,5 +204,6 @@ if __name__ == '__main__':
 	# scs_food()
 	# mellon_science_food()
 	# dietrich_food()
-	engineering_food()
+	# engineering_food()
+	campus_food()
 	print_events()
