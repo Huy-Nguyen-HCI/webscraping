@@ -1,7 +1,6 @@
 from bs4 import BeautifulSoup
 import os, csv
 import requests
-from time import strptime, strftime
 from datetime import datetime, timedelta
 from tabulate import tabulate
 from googleapiclient.discovery import build
@@ -41,14 +40,14 @@ def check_for_food(label, event_time):
 	"""
 	if len([word for word in KEYWORDS if word in label.lower()]) > 0:
 		return True
-	if (event_time.tm_hour >= 11 and event_time.tm_hour <= 12):
+	if (event_time.hour >= 11 and event_time.hour <= 12):
 		return True
 	return False
 
 
 def print_event(title, event_time, location, event_link):
 	"""Print the event information to std output."""
-	time_str = strftime(TIME_FORMAT, event_time)
+	time_str = datetime.strftime(event_time, TIME_FORMAT)
 	print(title + "\t" + time_str + "\t" + location + "\t" + event_link)
 
 
@@ -56,11 +55,11 @@ def filter_time_string(str):
 	return str.replace(" ", "").replace("\t", "").replace("\n", "")
 
 
-def get_time_from_string(time_string):
+def get_time_from_string(time_string, time_format=TIME_FORMAT):
 	try:
-		return strptime(time_string, TIME_FORMAT)
+		return datetime.strptime(time_string, time_format)
 	except ValueError:
-		return strptime(time_string, "%b %d %I%p")
+		return datetime.strptime(time_string, "%b %d %I%p")
 
 
 def fetch_calendar(calendar_id):
@@ -120,6 +119,32 @@ def mellon_science_food():
 			chosen_events.append([title, event_time, location, event_link, affiliation])
 
 
+def engineering_food():
+	"""Search for events in College of Engineering"""
+	affiliation = "College of Engineering"
+	url = "https://engineering.cmu.edu/news-events/events/"
+	time_format = "%B %d %Y %I:%M %p"
+	response = requests.get(url)
+	soup = BeautifulSoup(response.text, "html.parser")
+	for event in soup.find_all("div", class_="event"):
+		title = event.find("div", class_="title").find("p").get_text()
+		date_components = event.find("div", class_="date").contents
+		try:
+			date = date_components[1].get_text()
+			hour = date_components[3].get_text()
+			# if include both start and end time, only get start time
+			if "-" in hour:
+				hour = hour[:hour.find("-") - 1]
+			event_time = get_time_from_string("{} {}".format(date, hour), time_format)
+			if check_for_food(title, event_time):
+				location = event.find("div", class_="descrip").find("p").get_text()
+				event_link = url + event.find("div", class_="title").find("a").get("href")
+				chosen_events.append([title, event_time, location, event_link, affiliation])
+		# if no hour specified, ignore event
+		except IndexError:
+			pass
+
+
 def dietrich_food():
 	"""Search for events in Dietrich College of Humanities and Social Sciences"""
 	affiliation = "Dietrich"
@@ -127,25 +152,32 @@ def dietrich_food():
 	for event in fetch_calendar(google_calendar_id):
 		# print(event["start"].get("dateTime", event['start'].get("date")), event['summary'])
 		event_time = event["start"].get("dateTime", event['start'].get("date")).replace("-04:00", "")
-		event_time = strptime(event_time, '%Y-%m-%dT%H:%M:%S')
+		event_time = datetime.strptime(event_time, '%Y-%m-%dT%H:%M:%S')
 		title = event["summary"]
 		if check_for_food(title, event_time):
 			location = event["location"]
 			event_link = event["htmlLink"]
 			chosen_events.append([title, event_time, location, event_link, affiliation])
 
-	
 
 def print_events():
 	output = sorted(chosen_events, key=lambda event: event[1])
 	for event in output:
-		event[1] = strftime(TIME_FORMAT, event[1])
+		event[1] = datetime.strftime(event[1], TIME_FORMAT)
+
+	headers = ["Name", "Time", "Location", "Url", "Affiliation"]
 	print("Found food at these events ^.^")
-	print(tabulate(output, headers=["Name", "Time", "Location", "Url", "Affiliation"]))
+	print(tabulate(output, headers=headers))
+
+	with open("free_food.csv", "w") as f:
+		writer = csv.writer(f, delimiter=",")
+		writer.writerow(headers)
+		writer.writerows(output)
 
 
 if __name__ == '__main__':
 	# scs_food()
 	# mellon_science_food()
-	dietrich_food()
+	# dietrich_food()
+	engineering_food()
 	print_events()
