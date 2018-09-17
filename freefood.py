@@ -2,20 +2,28 @@ from bs4 import BeautifulSoup
 import os, csv
 import requests
 from time import strptime, strftime
+from datetime import datetime, timedelta
 from tabulate import tabulate
+from googleapiclient.discovery import build
+from httplib2 import Http
+from oauth2client import file, client, tools
 
 SCHOOL_URLS = [
-	"https://www.cmu.edu/events/"							# campus wide
-	"https://events.time.ly/0qe3bmk"						# Mellon School of Science
-	"https://www.cs.cmu.edu/calendar"						# School of Computer Science
-	"https://www.cs.cmu.edu/scs-seminar-series"				# All seminars in GHC have food!
-	"https://www.cmu.edu/dietrich/about/calendar/"			# Dietrich College of H & SS
-	"https://soa.cmu.edu/calendar/"							# School of Architecture
-	"https://www.cmu.edu/piper/calendar/"					# The Piper
-	"https://www.heinz.cmu.edu/about/events"				# Heinz College
-	"http://www.cfa.cmu.edu/pages/calendar"					# College of Fine Arts
-	"http://www.cs.cmu.edu/~aiseminar/"						# AI seminar
+	"https://www.cmu.edu/events/",								# campus wide
+	"https://events.time.ly/0qe3bmk",							# Mellon School of Science
+	"https://www.cs.cmu.edu/calendar",							# School of Computer Science
+	"https://www.cs.cmu.edu/scs-seminar-series",				# All seminars in GHC have food!
+	"https://www.cmu.edu/dietrich/about/calendar/",				# Dietrich College of H & SS
+	"https://soa.cmu.edu/calendar/",							# School of Architecture
+	"https://www.cmu.edu/piper/calendar/",						# The Piper
+	"https://www.heinz.cmu.edu/about/events",					# Heinz College
+	"http://www.cfa.cmu.edu/pages/calendar",					# College of Fine Arts
+	"http://www.cs.cmu.edu/~aiseminar/",						# AI seminar
+	"https://engineering.cmu.edu/news-events/events/index.html"	# College of Engineering
 ]
+
+"""if modifying these scopes, delete the file token.json."""
+SCOPES = 'https://www.googleapis.com/auth/calendar.readonly'
 
 """time format for parsing"""
 TIME_FORMAT = "%b %d %I:%M%p"
@@ -55,11 +63,28 @@ def get_time_from_string(time_string):
 		return strptime(time_string, "%b %d %I%p")
 
 
+def fetch_calendar(calendar_id):
+    store = file.Storage('token.json')
+    creds = store.get()
+    if not creds or creds.invalid:
+        flow = client.flow_from_clientsecrets('credentials.json', SCOPES)
+        creds = tools.run_flow(flow, store)
+    service = build('calendar', 'v3', http=creds.authorize(Http()))
+
+    # Call the Calendar API
+    start = datetime.utcnow().isoformat() + 'Z' # 'Z' indicates UTC time
+    end = (datetime.utcnow() + timedelta(days=7)).isoformat() + 'Z'
+    events_result = service.events().list(calendarId=calendar_id, timeMin=start,
+                                        singleEvents=True, timeMax=end,
+                                        orderBy='startTime').execute()
+    return events_result.get('items', [])
+
+
 def scs_food():
-	"""Search for events in SCS - https://www.cs.cmu.edu/calendar"""
+	"""Search for events in SCS"""
+	affiliation = "School of Computer Science"
 	base_url = "http://cs.cmu.edu"
 	url = base_url + "/calendar/"
-	affiliation = "School of Computer Science"
 	response = requests.get(url)
 	soup = BeautifulSoup(response.text, "html.parser")
 	for event in soup.find_all("a", class_="event__link-wrapper"):
@@ -75,9 +100,9 @@ def scs_food():
 
 
 def mellon_science_food():
-	"""Search for events in Mellon School of Science - https://events.time.ly/0qe3bmk"""
-	url = "http://events.time.ly/0qe3bmk"
+	"""Search for events in Mellon School of Science"""
 	affiliation = "Mellon School of Science"
+	url = "http://events.time.ly/0qe3bmk"
 	response = requests.get(url)
 	soup = BeautifulSoup(response.text, "html.parser")
 	for event in soup.find_all("a", class_="timely-event"):
@@ -95,6 +120,22 @@ def mellon_science_food():
 			chosen_events.append([title, event_time, location, event_link, affiliation])
 
 
+def dietrich_food():
+	"""Search for events in Dietrich College of Humanities and Social Sciences"""
+	affiliation = "Dietrich"
+	google_calendar_id = "t6ebuir6klabea3q87b5qjs360@group.calendar.google.com"
+	for event in fetch_calendar(google_calendar_id):
+		# print(event["start"].get("dateTime", event['start'].get("date")), event['summary'])
+		event_time = event["start"].get("dateTime", event['start'].get("date")).replace("-04:00", "")
+		event_time = strptime(event_time, '%Y-%m-%dT%H:%M:%S')
+		title = event["summary"]
+		if check_for_food(title, event_time):
+			location = event["location"]
+			event_link = event["htmlLink"]
+			chosen_events.append([title, event_time, location, event_link, affiliation])
+
+	
+
 def print_events():
 	output = sorted(chosen_events, key=lambda event: event[1])
 	for event in output:
@@ -104,6 +145,7 @@ def print_events():
 
 
 if __name__ == '__main__':
-	scs_food()
-	mellon_science_food()
+	# scs_food()
+	# mellon_science_food()
+	dietrich_food()
 	print_events()
